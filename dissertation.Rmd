@@ -1,0 +1,1413 @@
+---
+title: "Does language dominance matter?
+The effect of language use on the processing of complex morphology"
+output: html_document
+date: "2023-08-29"
+---
+
+
+Loading libraries
+```{r}
+library(lme4)
+library(brms)
+library(glmm)
+library(tidyverse)
+library(ggplot2)
+library(afex)
+library(trimr)
+require(car)
+require(lattice)
+require(itsadug)
+library(languageR)
+library(plotrix)
+library(Hmisc)
+library(rlist)
+library(effects)
+library(sjPlot)
+library(effectsize)
+library(trimr)
+library(palmerpenguins)
+library(taylor)
+library(emmeans)
+library(ggsignif)
+```
+
+```{r}
+azeri <- read.csv(file = "azeri.csv", header = T)
+```
+
+```{r}
+persian <- read.csv(file = "persian.csv", header = T)
+```
+
+```{r}
+questionnaire <- read.csv(file = "questionnaire.csv", header = T)
+```
+
+
+
+```{r}
+cols_to_keep <- c("Participant.Private.ID",
+  "Reaction.Time",
+  "Participant.Status",
+  "Participant.Completion.Code",
+  "Participant.Device.Type",
+  "Trial.Number",
+  "Response.Type",
+  "Response",
+  "Correct",
+  "Display",
+  "Component.Name",
+  "Spreadsheet..condition",
+  "Spreadsheet..answer",
+  "Spreadsheet..item",
+  "Spreadsheet..stimuli",
+  "Spreadsheet..freq",
+  "Spreadsheet..set",
+  "Spreadsheet..block",
+  "Object.ID",
+  "Response.Type",
+  "Event.Index",
+  "target_condition" = "target_condition",
+  "stem" = "stem",
+  "suffix" = "suffix"
+)
+
+```
+
+```{r}
+persian <- select(persian, all_of(cols_to_keep)
+)
+```
+
+```{r}
+azeri <- select(azeri, all_of(cols_to_keep)
+)
+```
+
+```{r}
+colnames(azeri)
+```
+
+```{r}
+colnames(persian)
+```
+Renaming Azeri data columns
+```{r}
+azeri <- azeri %>% 
+  rename(
+  participant = Participant.Private.ID,
+  completion_code= Participant.Completion.Code,
+  device_type = Participant.Device.Type,
+  display = Display, 
+  rt = Reaction.Time,
+  accuracy = Correct,
+  condition = Spreadsheet..condition,
+  stimuli = Spreadsheet..stimuli,
+  block = Spreadsheet..block,
+  answer = Spreadsheet..answer,
+  item = Spreadsheet..item,
+  freq = Spreadsheet..freq,
+  set = Spreadsheet..set,
+  object = Object.ID,
+  response = Response,
+  component = Component.Name,
+  participant_status = Participant.Status,
+  trial = Trial.Number,
+  response_type = Response.Type,
+  target_condition = target_condition,
+  stem = stem,
+  suffix = suffix
+  )
+```
+Adding Language Column
+```{r}
+azeri <- azeri %>% mutate(language = "azeri")
+```
+
+Renaming Persian data columns
+```{r}
+persian <- persian %>% 
+  rename(
+  participant = Participant.Private.ID,
+  completion_code= Participant.Completion.Code,
+  device_type = Participant.Device.Type,
+  display = Display, 
+  rt = Reaction.Time,
+  accuracy = Correct,
+  condition = Spreadsheet..condition,
+  stimuli = Spreadsheet..stimuli,
+  block = Spreadsheet..block,
+  answer = Spreadsheet..answer,
+  item = Spreadsheet..item,
+  freq = Spreadsheet..freq,
+  set = Spreadsheet..set,
+  object = Object.ID,
+  response = Response,
+  component = Component.Name,
+  participant_status = Participant.Status,
+  trial = Trial.Number,
+  response_type = Response.Type,
+  target_condition = target_condition,
+  stem = stem,
+  suffix = suffix
+  )
+```
+
+Adding Language column to the Persian data
+```{r}
+persian <- persian %>% mutate(language = "persian")
+```
+
+```{r}
+unique(questionnaire$Participant.Private.ID)
+```
+```{r}
+n_distinct(questionnaire$Participant.Private.ID)
+```
+```{r}
+colnames(questionnaire)
+```
+Keeping necessary columns
+```{r}
+cols_to_keep <- c("Participant.Private.ID",
+                  "Participant.Status",
+                  "Participant.Device.Type",
+                  "Question",
+                  "Response",
+                  "Object.ID",
+                  "Key"
+)
+
+questionnaire <- select(questionnaire, all_of(cols_to_keep))
+```
+
+```{r}
+colnames(questionnaire)
+```
+Renaming Questionnaire columns
+```{r}
+questionnaire <- questionnaire %>% 
+  rename(
+  participant = Participant.Private.ID,
+  device_type = Participant.Device.Type,
+  object = Object.ID, 
+  response = Response,
+  question = Question,
+  participant_status = Participant.Status
+)
+```
+
+Checking whether participants have used mobile phones and if so they need to be excluded from data because the experiment has only been designed to be run on a PC.
+
+Device type in azeri data:
+```{r}
+table(azeri$participant,azeri$device_type)
+```
+Device type in questionnaire data:
+```{r}
+table(questionnaire$participant,questionnaire$device_type)
+```
+1 participant has used a mobile phone.
+
+
+
+looking at age range 
+```{r}
+age <- questionnaire %>% 
+  filter(object == "object-13") %>% 
+  distinct(participant, response)
+
+```
+
+Some participants have entered their age in Persian. I will change them into English in questionnaire.
+```{r}
+questionnaire <- questionnaire %>% 
+  mutate( response = str_replace_all(response, "۴۲","42"))
+
+questionnaire <- questionnaire %>% 
+  mutate(response = str_replace_all(response, "36 سال", 
+                                       "36"))
+```
+
+Participant 9287678 is under the age of 18 and and participant 9458745 has used a mobile phone. These participants need to be excluded from questionnaire and data.
+```{r}
+participant_high_error <- list(9287678, 9458745)
+questionnaire <- questionnaire[!questionnaire$participant %in% participant_high_error,]
+azeri <- azeri[!azeri$participant %in% participant_high_error,]
+persian <- persian[!persian$participant %in% participant_high_error,]
+```
+
+```{r}
+n_distinct(azeri$participant)
+```
+```{r}
+age <- questionnaire %>% 
+  filter(object == "object-13") %>% 
+  distinct(participant, response)
+```
+
+Mean age of participants 
+changing age to a numeric value and calculating mean 
+```{r}
+age_numeric <- as.numeric(age$response)
+str(age_numeric)
+mean(age_numeric)
+sd(age_numeric)
+range(age_numeric)
+```
+Where were participants born?
+```{r}
+Place_of_Birth <- questionnaire %>% 
+  filter(object == "object-15") %>% 
+  distinct(participant, response)
+```
+
+Questions in questionnaire include self-assessed language proficiency and language use and responses are under Response column labelled under Object column, for instance the response related to the speaking skill in Azeri is incorporated in the Object-40 row. 
+
+Object-40: Language use- Speaking in Azeri 
+Object-76: Language use- Listening in Azeri 
+Object-77: Language use- Writing in Azeri 
+Object-82: Language use- Reading in Azeri 
+Object-86: Self-proficiency in speaking in Azeri
+Object-88: Self-proficiency in listening in Azeri 
+Object-89: Self-proficiency in reading in Azeri
+Object-92: Self-proficiency in writing in Azeri
+Object-41: Language use- Speaking in Persian
+Object-78: Language use- Listening in Persian
+Object-80: Language use- Writing in Persian
+Object-83: Language use- Reading in Persian
+
+```{r}
+str(questionnaire)
+```
+Converting characters to numeric in the response column 
+```{r}
+questionnaire <- questionnaire %>% mutate(
+  response = as.numeric(response)
+)
+str(questionnaire)
+```
+To calculate the mean for self-assessed  proficiency in speaking I need to filter for object-86:
+```{r}
+Prof_Speak <- questionnaire %>% filter(object == "object-86")
+```
+2 participants have rated their proficiency in speaking as bad as 1.
+
+Mean of self-assessed proficiency in speaking in Azeri
+```{r}
+Mean_Prof_Speak <- Prof_Speak %>% 
+  summarise(Mean_Speaking = mean(as.numeric(response))/7*100
+)
+Mean_Prof_Speak
+```
+Mean of self-assessed proficiency in listening in Azeri 
+```{r}
+Prof_Listen <- questionnaire %>% 
+  filter(object == "object-88")
+
+Mean_Prof_Listen <- Prof_Listen %>% 
+  summarise(Mean_Listening = mean(as.numeric(response))/7*100
+)
+Mean_Prof_Listen
+```
+Mean of self-assessed proficiency in reading in Azeri
+```{r}
+Prof_Read <- questionnaire %>% 
+  filter(object == "object-89")
+
+Mean_Prof_Read <- Prof_Read %>% 
+  summarise(Mean_Reading=mean(as.numeric(response))/7*100
+)
+Mean_Prof_Read
+```
+Mean of self-assessed proficiency in writing in Azeri
+```{r}
+Prof_Write <- questionnaire %>% 
+  filter(object == "object-92")
+
+Mean_Prof_Write <- Prof_Write %>% 
+  summarise(Mean_Writing=mean(as.numeric(response))/7*100
+)
+Mean_Prof_Write
+```
+Mean of self-assessed proficiency in four skills in Azeri per participant 
+```{r}
+Self_Assess_Prof <- questionnaire %>% 
+  filter(object =="object-86"|object == "object-88"|object == "object-89"|object == "object-92"
+)
+
+mean_prof_azeri <- Self_Assess_Prof %>% 
+  group_by(participant) %>% 
+  summarise(mean_proficiency_azeri=mean(as.numeric(response))/7*100) %>% 
+  arrange(mean_proficiency_azeri)
+
+mean_prof_azeri
+```
+
+Adding mean of proficiency to the data
+
+```{r}
+azeri_prof <- merge(mean_prof_azeri,azeri, by=c("participant")
+)
+```
+
+```{r}
+persian_prof <- merge(mean_prof_azeri,persian, by=c("participant")
+)
+```
+
+Language use in Azeri:
+Data was filtered for language use in four skills of speaking, listening, reading and writing in Azeri
+
+```{r}
+Lan_Use <- questionnaire %>% 
+  filter(object =="object-40"|object == "object-76"|object == "object-77"|object == "object-82"
+)
+```
+Mean of language use in four skills in Azeri by participant
+```{r}
+Mean_Use_Azeri <- Lan_Use %>% 
+  group_by(participant) %>% 
+  summarise(mean_use_azeri=mean(as.numeric(response))
+  ) %>%
+  arrange(mean_use_azeri)
+Mean_Use_Azeri
+```
+Merging language use mean rates to the data
+
+```{r}
+azeri_prof_LanUse <- merge(Mean_Use_Azeri,azeri_prof, by=c("participant")
+)
+```
+
+```{r}
+persian_prof_LanUse <- merge(Mean_Use_Azeri,persian_prof, by=c("participant")
+)
+```
+
+Mean of language use in speaking in Azeri
+```{r}
+LanUse_Speak <- questionnaire %>% 
+  filter(object =="object-40")
+
+Mean_Use_Speak <- LanUse_Speak %>% 
+  summarise(Mean_Speaking=mean(as.numeric(response))
+)
+Mean_Use_Speak
+```
+Mean of language use in listening in Azeri
+```{r}
+LanUse_Listen <- questionnaire %>% 
+  filter(object == "object-76")
+
+Mean_Use_Listen <- LanUse_Listen %>% 
+  summarise(Mean_Listening=mean(as.numeric(response))
+)
+Mean_Use_Listen
+```
+
+Mean of language use in writing in Azeri
+```{r}
+LanUse_Write <- questionnaire %>% 
+  filter(object == "object-77")
+
+Mean_Use_Write <- LanUse_Write %>% 
+  summarise(Mean_Writing=mean(as.numeric(response))
+)
+Mean_Use_Write
+```
+
+Mean of language use in reading in Azeri
+```{r}
+LanUse_Read <- questionnaire %>% 
+  filter(object == "object-82")
+
+Mean_Use_Read <- LanUse_Read %>% 
+  summarise(Mean_Reading=mean(as.numeric(response))
+)
+Mean_Use_Read
+```
+
+Mean of language use in speaking in Persian
+```{r}
+LanUse_Fa_Speak <- questionnaire %>% 
+  filter(object == "object-41")
+
+Mean_Use_Fa_Speak <- LanUse_Fa_Speak %>% 
+  summarise(Mean_Fa_Speak=mean(as.numeric(response))
+)
+Mean_Use_Fa_Speak
+```
+
+Mean of language use in listening in Persian
+```{r}
+LanUse_Fa_Listen <- questionnaire %>% filter(object == "object-78")
+
+Mean_Use_Fa_Listen <- LanUse_Fa_Listen %>% summarise(Mean_Fa_Listen=mean(as.numeric(response))
+)
+Mean_Use_Fa_Listen
+```
+Mean of language use in writing in Persian
+```{r}
+LanUse_Fa_Write <- questionnaire %>% 
+  filter(object == "object-80")
+
+Mean_Use_Fa_Write <- LanUse_Fa_Write %>% 
+  summarise(Mean_Fa_Write=mean(as.numeric(response))
+)
+Mean_Use_Fa_Write
+```
+Mean of language use in reading in Persian
+```{r}
+LanUse_Fa_Read <- questionnaire %>% 
+  filter(object == "object-83")
+
+Mean_Use_Fa_Read <- LanUse_Fa_Read %>% 
+  summarise(Mean_Fa_Read=mean(as.numeric(response))
+)
+Mean_Use_Fa_Read
+```
+Mean of language use in four skills in Persian by participant
+```{r}
+Lan_Use_Persian <- questionnaire %>% 
+  filter(object =="object-41"|object == "object-78"|object == "object-80"|object == "object-83"
+)
+```
+
+```{r}
+Mean_Use_Persian <- Lan_Use_Persian %>% 
+  group_by(participant) %>% 
+  summarise(mean_use_persian=mean(as.numeric(response))
+  ) %>%
+  arrange(mean_use_persian)
+Mean_Use_Persian
+```
+
+Merging language use mean rates in Persian to the data
+
+```{r}
+azeri_data <- merge(Mean_Use_Persian, azeri_prof_LanUse, by=c("participant")
+)
+```
+
+```{r}
+persian_data <- merge(Mean_Use_Persian, persian_prof_LanUse, by=c("participant")
+)
+```
+
+##Azeri Data
+
+Checking for keyboard response: This includes keyboard response in both practice and critical trials. The reason that I filtered for "keyboard response" is that it is incorporated in two screens in the experiment: both audio screen and response screen.  
+Critical trials include objects 100 and 91.
+```{r}
+colnames(azeri_data)
+```
+
+```{r}
+azeri_key <- azeri_data %>% 
+  filter(component == "Keyboard Response")
+unique(azeri_key$object)
+```
+```{r}
+persian_key <- persian_data %>% 
+  filter(component == "Keyboard Response")
+unique(persian_key$object)
+```
+Checking for object 100 in Azeri data (Object 100 is the keyboard response in the audio screen)
+Some participants have responded to items before audio finishes or exactly when audio finishes, i.e. in object-100 
+```{r}
+azeri_100 <- azeri_data %>% 
+  filter(set == "critical",object == "object-100")
+nrow(azeri_100)
+```
+Filtering for object 100 and 91 which are participants' responses
+```{r}
+azeri_critical <- azeri_data %>% 
+  filter(set == "critical") %>%
+  filter(object == "object-100" | object == "object-91")
+```
+
+Creating a column with a unique trial number to be able to choose participants' first response 
+```{r}
+azeri_critical$trial_unique_id <- paste(azeri_critical$participant," / ", azeri_critical$trial)
+```
+
+Filtering for data where participants responded in both object 100 and 91 and then filtering for only object 100
+```{r}
+trial_with_both = azeri_critical$trial_unique_id[azeri_critical$object == "object-91" & azeri_critical$trial_unique_id %in% azeri_critical$trial_unique_id[azeri_critical$object == "object-100"]]
+
+azeri_critical = azeri_critical[!(azeri_critical$trial_unique_id %in% trial_with_both & azeri_critical$object == "object-91"),]
+```
+
+Filler trials
+```{r}
+azeri_filler <- azeri_data %>% 
+  filter(set == "filler") %>%
+  filter(object == "object-100" | object == "object-91")
+```
+
+```{r}
+azeri_filler$trial_unique_id <- paste(azeri_filler$participant," / ", azeri_filler$trial)
+```
+
+
+```{r}
+trial_with_both = azeri_filler$trial_unique_id[azeri_filler$object == "object-91" & azeri_filler$trial_unique_id %in% azeri_filler$trial_unique_id[azeri_filler$object == "object-100"]]
+
+azeri_filler = azeri_filler[!(azeri_filler$trial_unique_id %in% trial_with_both & azeri_filler$object == "object-91"),]
+```
+
+Now there are 2 separate data for critical and filler trials: azeri_critical and azeri_filler
+
+Participants in the filler trials
+```{r}
+unique(azeri_filler$participant)
+```
+Which participants didn't respond to fillers or critical trials?
+```{r}
+participant_data <- azeri_data$participant
+participant_filler <- azeri_filler$participant
+participant_critical <- azeri_critical$participant
+```
+
+```{r}
+bad_participants_critical <- setdiff(participant_data, participant_critical)
+bad_participants_critical
+```
+```{r}
+bad_participants_filler <- setdiff(participant_data, participant_filler)
+bad_participants_filler
+```
+Let's find out why these participants didn't respond to the trials
+```{r}
+bad_participants_data_critical <- azeri_data %>% 
+  filter(participant %in% bad_participants_critical) %>%
+  filter(object == "object-100" | object == "object-91")
+```
+They have not pressed the True or False keys.
+
+```{r}
+bad_participants_data <- azeri_data %>% filter(participant %in% bad_participants_critical)
+```
+
+```{r}
+questionnaire_bad_participants <- questionnaire %>% filter(participant %in% bad_participants_critical)
+
+```
+Two participants have not responded to the trials: One of the participants is 34 years old and the other is 22 years old.
+These participants will be removed from the data
+
+Removing bad participants
+```{r}
+azeri_data <- azeri_data[!azeri_data$participant %in% bad_participants_critical,]
+azeri_filler <- azeri_filler[!azeri_filler$participant %in% bad_participants_critical,]
+azeri_critical <- azeri_critical[!azeri_critical$participant %in% bad_participants_critical,]
+persian_data <- persian_data[!persian_data$participant %in% bad_participants_critical,]
+```
+
+Recoding character/integer variables as factors in filler trials
+```{r}
+azeri_filler <- azeri_filler %>% 
+  mutate (participant = as.factor(participant),
+          trial = as.factor(trial),
+          item = as.factor(item),
+          block = as.factor(block),
+          freq = as.factor(freq),
+          target_condition = as.factor(target_condition),
+          language = as.factor(language)
+    )
+summary(azeri_filler)
+```
+Recoding character/integer variables as factors in critical trials
+```{r}
+azeri_critical <- azeri_critical %>% 
+  mutate (participant = as.factor(participant),
+          trial = as.factor(trial),
+          condition = as.factor(condition),
+          item = as.factor(item),
+          block = as.factor(block),
+          freq = as.factor(freq),
+          target_condition = as.factor(target_condition),
+          language = as.factor(language),
+          mean_use_azeri = as.factor(mean_use_azeri),
+          mean_use_persian = as.factor(mean_use_persian),
+          mean_proficiency_azeri = as.factor(mean_proficiency_azeri)
+  )
+summary(azeri_critical)
+```
+
+```{r}
+unique(azeri_filler$trial)
+```
+Accuracy table per participant in critical trials
+```{r}
+azeri_data$accuracy[is.na(azeri_data$accuracy)] <- 0
+azeri_critical$accuracy[is.na(azeri_critical$accuracy)] <- 0
+azeri_filler$accuracy[is.na(azeri_filler$accuracy)] <- 0
+```
+
+```{r}
+table_correct_critical <- azeri_critical %>% 
+  count(participant, accuracy) %>% 
+  spread(accuracy, n) %>% 
+  mutate(prop.accuracy = `1`/42) %>% 
+  mutate(prop.accuracy = round(prop.accuracy, 2)) %>% 
+  arrange(prop.accuracy)
+
+table_correct_critical
+```
+
+Accuracy table per participant in filler trials
+```{r}
+table_correct_filler <- azeri_filler %>% 
+  count(participant, accuracy) %>% 
+  spread(accuracy, n) %>% 
+  mutate(prop.accuracy = `1`/42) %>% 
+  mutate(prop.accuracy = round(prop.accuracy, 2)) %>% 
+  arrange(prop.accuracy)
+
+table_correct_filler
+
+```
+
+I'll remove participants that have accuracy rate of less than 70% in the filler trials.
+```{r}
+
+participant_high_error <- list(9237013, 9401799, 9267703)
+azeri_data <- azeri_data[!azeri_data$participant %in% participant_high_error,]
+azeri_filler <- azeri_filler[!azeri_filler$participant %in% participant_high_error,]
+azeri_critical <- azeri_critical[!azeri_critical$participant %in% participant_high_error,]
+
+persian_data <- persian_data[!persian_data$participant %in% participant_high_error,]
+```
+
+```{r}
+colnames(azeri_critical)
+```
+```{r}
+unique(azeri_critical$target_condition)
+```
+## Accuracy
+
+Accuracy mean, SD and SE 
+
+```{r}
+azeri_critical <- azeri_critical %>%
+  mutate(prime_type = ifelse(block %in% c(1, 2, 5, 6, 9, 10), "prime", "target"))
+
+```
+
+```{r}
+azeri_critical <- azeri_critical %>% filter(prime_type == "target")
+```
+
+
+```{r}
+acc_mean_azeri <- azeri_critical %>% group_by(target_condition) %>% summarise(Mean = round(mean(accuracy),2), SD = round(sd(accuracy),3), SE = round(std.error(accuracy),4))
+
+acc_mean_azeri
+```
+Accuracy plot by average:
+```{r}
+azeri_critical %>% group_by(target_condition, item) %>%
+  summarise(prop = mean(accuracy)) %>%
+  ggplot(aes(x= target_condition , y= prop)) +
+  stat_summary(fun.data = mean_cl_boot, size=0.75) + 
+  geom_jitter(size = 0.5, alpha = 0.5, width = 0.2, height = 0) +
+  xlab("Condition") +
+  ylab("Accuracy")
+```
+Accuracy bar plot in different conditions
+```{r}
+
+ggplot(acc_mean_azeri,
+       aes(x = target_condition, y = Mean*100, fill = target_condition)) +
+  geom_bar(stat = "identity", width = 0.4, position = position_dodge(0.7), show.legend = FALSE  )+
+  ylab("% Accuracy of Target Words in Azeri") + 
+  xlab("Conditions") +
+  coord_cartesian(ylim = c(0, 100)) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)))+
+  geom_signif(
+    comparisons = "target_condition",
+    margin_top = 0.12,
+    step_increase = 0.09,
+    tip_length = 0.05,
+    annotation = c("***")
+  )
+```
+
+#### Generalised Linear Modeling for Accuracy in Persian data 
+
+```{r}
+ azeri_critical <- azeri_critical %>% mutate(
+   target_condition = fct_relevel(target_condition, "inflected"))
+```
+
+```{r}
+acc_azeri_m2 <- glmer(accuracy ~ target_condition + (1  | participant) + (1 | trial), data = azeri_critical, family = "binomial", control = glmerControl(optimizer = "bobyqa"))
+summary(acc_azeri_m2)
+```
+```{r}
+tab_model(acc_azeri_m2)
+```
+
+
+## Persian data
+
+Checking for keyboard response: This includes keyboard response in both practice and critical trials. The reason that I filtered for "keyboard response" is that it is incorporated in two screens in the experiment: both audio screen and response screen.  
+Critical trials include objects 55 and 52.
+```{r}
+colnames(persian_data)
+```
+
+```{r}
+persian_key <- persian_data %>% 
+  filter(component == "Keyboard Response")
+unique(persian_key$object)
+```
+Checking for object 55 in Persian data (Object 55 is the keyboard response in the audio screen)
+Some participants have responded to items before audio finishes or exactly when audio finishes, i.e. in object-55 
+```{r}
+persian_55 <- persian_data %>% 
+  filter(set == "critical",object  == "object-55")
+nrow(persian_55)
+```
+Filtering for object 55 and 52 which are participants' responses
+```{r}
+persian_critical <- persian_data %>% 
+  filter(set == "critical") %>%
+  filter(object == "object-55" | object == "object-52")
+```
+
+Creating a column with a unique trial number to be able to choose participants' first response 
+```{r}
+persian_critical$trial_unique_id <- paste(persian_critical$participant," / ", persian_critical$trial)
+```
+
+Filtering for data where participants responded in both object 55 and 52 and then filtering for only object 55
+```{r}
+trial_with_both = persian_critical$trial_unique_id[persian_critical$object == "object-52" & persian_critical$trial_unique_id %in% persian_critical$trial_unique_id[persian_critical$object == "object-55"]]
+
+persian_critical = persian_critical[!(persian_critical$trial_unique_id %in% trial_with_both & persian_critical$object == "object-52"),]
+```
+
+Filler trials
+```{r}
+persian_filler <- persian_data %>% 
+  filter(set == "filler") %>%
+  filter(object == "object-52" | object == "object-55")
+```
+
+```{r}
+persian_filler$trial_unique_id <- paste(persian_filler$participant," / ", persian_filler$trial)
+```
+
+
+```{r}
+trial_with_both = persian_filler$trial_unique_id[persian_filler$object == "object-52" & persian_filler$trial_unique_id %in% persian_filler$trial_unique_id[persian_filler$object == "object-55"]]
+
+persian_filler = persian_filler[!(persian_filler$trial_unique_id %in% trial_with_both & persian_filler$object == "object-52"),]
+```
+
+Now there are 2 separate data for critical and filler trials: persian_critical, persian_filler
+
+Participants in the filler trials
+```{r}
+unique(persian_filler$participant)
+```
+Which participants didn't respond to fillers or critical trials?
+```{r}
+participant_data_persian <- persian_data$participant
+participant_filler_persian <- persian_filler$participant
+participant_critical_persian <- persian_critical$participant
+```
+
+```{r}
+bad_participants_critical_persian <- setdiff(participant_data_persian, participant_critical_persian)
+bad_participants_critical_persian
+```
+```{r}
+bad_participants_filler_persian <- setdiff(participant_data_persian, participant_filler_persian)
+bad_participants_filler_persian
+```
+```{r}
+bad_participants_data_persian <- persian_data %>% filter(participant %in% bad_participants_critical_persian)
+```
+
+Changing character/integer variables into factors in filler trials
+```{r}
+persian_filler <- persian_filler %>% 
+  mutate (participant = as.factor(participant),
+          trial = as.factor(trial),
+          item = as.factor(item),
+          block = as.factor(block),
+          freq = as.factor(freq),
+          target_condition = as.factor(target_condition),
+          language = as.factor(language)
+    )
+summary(persian_filler)
+```
+Changing character/integer variables into factors in critical trials
+```{r}
+persian_critical <- persian_critical %>% 
+  mutate (participant = as.factor(participant),
+          trial = as.factor(trial),
+          item = as.factor(item),
+          block = as.factor(block),
+          freq = as.factor(freq),
+          target_condition = as.factor(target_condition),
+          language = as.factor(language)
+  )
+summary(persian_critical)
+```
+```{r}
+unique(persian_filler$trial)
+```
+Accuracy table per participant in critical trials
+```{r}
+persian_data$accuracy[is.na(persian_data$accuracy)] <- 0
+persian_critical$accuracy[is.na(persian_critical$accuracy)] <- 0
+persian_filler$accuracy[is.na(persian_filler$accuracy)] <- 0
+```
+
+```{r}
+table_correct_critical_persian <- persian_critical %>% 
+  count(participant, accuracy) %>% 
+  spread(accuracy, n) %>% 
+  mutate(prop.accuracy = `1`/42) %>% 
+  mutate(prop.accuracy = round(prop.accuracy, 2)) %>% 
+  arrange(prop.accuracy)
+
+table_correct_critical_persian
+
+```
+
+Accuracy table per participant in filler trials
+```{r}
+table_correct_filler_persian <- persian_filler %>% 
+  count(participant, accuracy) %>% 
+  spread(accuracy, n) %>% 
+  mutate(prop.accuracy = `1`/42) %>% 
+  mutate(prop.accuracy = round(prop.accuracy, 2)) %>% 
+  arrange(prop.accuracy)
+
+table_correct_filler_persian
+
+```
+All participants have accuracy rate of 70% in filler trials. 
+
+```{r}
+colnames(persian_critical)
+```
+
+```{r}
+unique(persian_critical$target_condition)
+```
+## Accuracy
+
+Accuracy mean, SD and SE 
+
+```{r}
+persian_critical <- persian_critical %>%
+  mutate(prime_type = ifelse(block %in% c(1, 2, 5, 6, 9, 10), "prime", "target"))
+
+```
+
+```{r}
+persian_critical <- persian_critical %>% filter(prime_type == "target")
+```
+
+
+```{r}
+acc_mean_persian <- persian_critical %>% group_by(target_condition) %>% summarise(Mean = round(mean(accuracy),2), SD = round(sd(accuracy),3), SE = round(std.error(accuracy),4))
+
+acc_mean_persian
+```
+
+Accuracy plot by average:
+```{r}
+persian_critical %>% group_by(target_condition, item) %>%
+  summarise(prop = mean(accuracy)) %>%
+  ggplot(aes(x= target_condition, y= prop)) +
+  stat_summary(fun.data = mean_cl_boot, size=0.75) + 
+  geom_jitter(size = 0.5, alpha = 0.5, width = 0.2, height = 0) +
+  xlab("Condition") +
+  ylab("Accuracy of Target words in Farsi")
+```
+Accuracy bar plot in different conditions
+```{r}
+
+ggplot(acc_mean_persian,
+       aes(x = target_condition, y=Mean*100, fill = target_condition)) +
+  geom_bar(stat = "identity", width = 0.4, position = position_dodge(0.7), show.legend = FALSE  )+
+  ylab("% Accuracy of Target Words in Farsi") + 
+  xlab("Conditions") +
+  coord_cartesian(ylim = c(0, 100)) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)))+
+  geom_signif(
+    comparisons = "condition_persian",
+    margin_top = 0.12,
+    step_increase = 0.09,
+    tip_length = 0.05,
+    annotation = c("***")
+  )
+```
+
+
+#### Generalised Linear Modeling for Accuracy in Persian data
+
+```{r}
+ persian_critical <- persian_critical %>% mutate(
+   target_condition = fct_relevel(target_condition, "inflected"))
+```
+
+```{r}
+acc_persian_m1 <- glmer (accuracy ~ target_condition + (1  | participant) + (1 | trial), data = persian_critical, family = "binomial", control = glmerControl(optimizer = "bobyqa"))
+summary(acc_persian_m1)
+```
+```{r}
+tab_model(acc_persian_m1)
+```
+
+
+## Reaction Time in Azeri data
+
+```{r}
+azeri_data$trial_unique_id <- paste(azeri_data$participant," / ", azeri_data$trial)
+
+```
+
+If participants have responded in 2 objects, I will take into account the first object. 
+```{r}
+trial_with_both = azeri_data$trial_unique_id[azeri_data$object == "object-91" & azeri_data$trial_unique_id %in% 
+azeri_data$trial_unique_id[azeri_data$object == "object-100"]]
+
+azeri_data = azeri_data[!(azeri_data$trial_unique_id %in% trial_with_both & azeri_data$object== "object-91"),]
+```
+In the data, there are 'Response Type', 'Response', and 'Reaction Time' columns. The value in the 'Reaction Time' column where the Response Type is 'response' and the Response is 'yes' or 'no' will give the time since screen start at which the participant pressed the response key.
+ 
+The values in the Reaction Time column are counted from the start of the screen. If the participant responded in object-100 with the audio clip, then this value minus the value in the 'audio start' row will correspond to the participant's reaction time since audio onset. If the participant instead responded on object-91 with only the response button, then I will need to add together the Reaction Time value in the row with the response type 'continue' from object-19 (this gives the duration of the audio screen) to the Reaction Time value in the row with the response type 'response' from object-91 (this gives the time after the start of the third screen at which the participant pressed the response key). I will then subtract the value in the 'audio start' row to calculate the participant's reaction time since audio onset.
+
+```{r}
+azeri_data <- azeri_data %>% mutate(prime_type = ifelse(block %in% c(1, 2, 5, 6, 9, 10), "prime", "target"))
+```
+
+
+```{r}
+azeri_91 <- azeri_data %>% filter(object == "object-91")
+azeri_continue <- azeri_data %>% filter(object == "object-19" & response_type == "continue")
+azeri_audio_started <- azeri_data %>% filter(object == "object-19" & response == "audio started")
+azeri_91_continue <- rbind(azeri_91, azeri_continue)
+```
+
+Reaction time in object 91 + reaction time in object 19
+```{r}
+rt_sum_continue <- azeri_91_continue %>% group_by(trial_unique_id) %>%
+  summarise(total_rt = sum(rt) )
+```
+
+adding total RT to the data and dropping rt_azeri column
+```{r}
+azeri_sum_continue <- merge(rt_sum_continue, azeri_91, by = c("trial_unique_id"))
+```
+```{r}
+azeri_sum_continue <- azeri_sum_continue %>%
+  select(-rt)
+```
+
+
+```{r}
+azeri_sum_continue <- azeri_sum_continue %>%
+  rename(rt = total_rt)
+```
+
+combining the data with rt and data with audio started
+```{r}
+azeri_sum_audio_started <- rbind(azeri_sum_continue, azeri_audio_started)
+```
+
+subtracting the audio started RT from the total RT
+```{r}
+azeri_91_final <- azeri_sum_audio_started %>% 
+  group_by(trial_unique_id) %>%
+  arrange(trial_unique_id) %>%
+  mutate(final_rt = lag(rt) - rt) %>%
+  select(trial_unique_id, final_rt) %>%
+  filter(!is.na(final_rt))
+```
+
+```{r}
+azeri_91_final <- merge(azeri_91, azeri_91_final, by = c("trial_unique_id"))
+```
+
+
+Object 100
+```{r}
+azeri_100 <- azeri_data %>% filter(object == "object-100")
+
+azeri_100_audio_started <- rbind(azeri_100, azeri_audio_started)
+
+```
+
+```{r}
+rt_100 <- azeri_100_audio_started %>% group_by(trial_unique_id) %>%
+  arrange(trial_unique_id, object) %>%
+  mutate(final_rt = lag(rt) - rt) %>%
+  filter(!is.na(final_rt)) %>%
+  select(final_rt, trial_unique_id)
+```
+
+```{r}
+azeri_100_final <- merge(azeri_100, rt_100, by = c("trial_unique_id"))
+```
+
+Combining both 100 and 91
+```{r}
+azeri_100_91 <- rbind(azeri_100_final, azeri_91_final)
+```
+
+Filtering for correct answers in order to generate means for reaction time 
+```{r}
+azeri_rt <- azeri_100_91 %>% filter(accuracy == 1, set == "critical", prime_type == "target")
+
+```
+
+```{r}
+str(azeri_rt)
+```
+
+```{r}
+summary(azeri_rt$final_rt)
+```
+
+```{r}
+qqnorm(azeri_rt$final_rt)
+```
+
+```{r}
+azeri_rt2 <- azeri_rt %>% filter(final_rt > 100 & final_rt < 5000 )
+(nrow(azeri_rt) - nrow(azeri_rt2)) / nrow(azeri_rt)*100
+```
+Checking whether data is normaly distributed
+
+```{r}
+azeri_rt2$log_rt <- log(azeri_rt2$final_rt)
+```
+
+```{r}
+qqnorm(azeri_rt2$log_rt)
+```
+
+```{r}
+hist(azeri_rt2$final_rt, xlab = "Reaction Time")
+```
+
+Checking how the distribution looks like for the random factor of participant 
+```{r}
+
+qqmath(~log_rt|participant, data = azeri_rt2)
+
+```
+
+```{r}
+table(azeri_rt2$participant)
+```
+box whisker plots per condition 
+```{r}
+bwplot(final_rt ~ target_condition, data = azeri_rt2 )
+```
+```{r}
+azeri_rt_numeric <- azeri_rt2 %>% mutate(final_rt = as.numeric(final_rt))
+```
+
+Reaction Time means per condition and standard error and standard deviation 
+```{r}
+azeri_rt_means <- azeri_rt2 %>% group_by(target_condition) %>% summarise(Mean = round(mean(final_rt),2), Standard_Deviation = round(sd(final_rt),2), Standard_Error = round(std.error(final_rt),3)
+)
+
+
+azeri_rt_means
+```
+
+Let's look at the effect of fatigue
+```{r}
+xylowess.fnc(final_rt ~ trial | participant, data = azeri_rt2, ylab = "log RT")
+```
+```{r}
+str(azeri_rt2)
+```
+```{r}
+azeri_rt2 <- azeri_rt2 %>% mutate (participant = as.factor(participant),
+          trial = as.factor(trial),
+          target_condition = as.factor(target_condition),
+          Item = as.factor(item),
+          block = as.factor(block),
+          freq = as.factor(freq), 
+          language = as.factor(language)
+          #dominance_az = as.factor(dominance_az)
+    )
+```
+
+#### Linear mixed modelling for reaction time in Azeri data
+```{r}
+ azeri_rt2 <- azeri_rt2 %>% mutate(
+   target_condition = fct_relevel(target_condition, "inflected"))
+```
+
+```{r}
+rt_model_azeri <- lmer(final_rt ~ target_condition + (1  | participant) + (1  | trial), data = azeri_rt2)
+tab_model(rt_model_azeri)
+summary(rt_model_azeri)
+```
+
+Let's extract fitted values and compare these with the actual values
+```{r}
+fitted(rt_model_azeri)[1:4]
+```
+```{r}
+azeri_rt2$final_rt[1:4]
+```
+
+## Reaction Time in Persian data
+
+```{r}
+persian_data <- persian_data %>% mutate(prime_type = ifelse(block %in% c(1, 2, 5, 6, 9, 10), "prime", "target"))
+```
+
+```{r}
+persian_data$trial_unique_id <- paste(persian_data$participant," / ", persian_data$trial)
+```
+
+If participants have responded in 2 objects, I will take into account the first object. 
+```{r}
+trial_with_both = persian_data$trial_unique_id[persian_data$object == "object-52" & persian_data$trial_unique_id %in% 
+persian_data$trial_unique_id[persian_data$object == "object-55"]]
+
+persian_data = persian_data[!(persian_data$trial_unique_id %in% trial_with_both & persian_data$object == "object-52"),]
+```
+In the data, there are 'Response Type', 'Response', and 'Reaction Time' columns. The value in the 'Reaction Time' column where the Response Type is 'response' and the Response is 'yes' or 'no' will give the time since screen start at which the participant pressed the response key.
+ 
+The values in the Reaction Time column are counted from the start of the screen. If the participant responded in object-55 with the audio clip, then this value minus the value in the 'audio start' row will correspond to the participant's reaction time since audio onset. If the participant instead responded on object-52 with only the response button, then I will need to add together the Reaction Time value in the row with the response type 'continue' from object-26 (this gives the duration of the audio screen) to the Reaction Time value in the row with the response type 'response' from object-52 (this gives the time after the start of the third screen at which the participant pressed the response key). I will then subtract the value in the 'audio start' row to calculate the participant's reaction time since audio onset.
+
+```{r}
+persian_52 <- persian_data %>% filter(object == "object-52")
+persian_continue <- persian_data %>% filter(object == "object-26" & response_type == "continue")
+persian_audio_started <- persian_data %>% filter(object == "object-26" & response == "audio started")
+persian_52_continue <- rbind(persian_52, persian_continue)
+```
+
+Reaction time in object 52 + reaction time in object 26
+```{r}
+rtp_sum_continue <- persian_52_continue %>% group_by(trial_unique_id) %>%
+  summarise(total_rt = sum(rt) )
+```
+
+adding total RT to the data and dropping rt_persian column
+```{r}
+persian_sum_continue <- merge(rtp_sum_continue, persian_52, by = c("trial_unique_id"))
+
+persian_sum_continue <- persian_sum_continue %>%
+  select(-rt)
+```
+
+```{r}
+persian_sum_continue <- persian_sum_continue %>%
+  rename(rt = total_rt)
+```
+
+combining the data with total rt and data with audio started
+```{r}
+persian_sum_audio_started <- rbind(persian_sum_continue, persian_audio_started)
+```
+
+subtracting the audio started RT from the total RT
+```{r}
+persian_52_final <- persian_sum_audio_started %>% 
+  group_by(trial_unique_id) %>%
+  arrange(trial_unique_id) %>% 
+  mutate(final_rt = lag(rt) - rt) %>%
+  select(trial_unique_id, final_rt) %>%
+  filter(!is.na(final_rt))
+```
+
+```{r}
+persian_52_final <- merge(persian_52, persian_52_final, by = c("trial_unique_id"))
+```
+
+
+Object 55
+```{r}
+persian_55 <- persian_data %>% filter(object == "object-55")
+
+persian_55_audio_started <- rbind(persian_55, persian_audio_started)
+
+```
+
+```{r}
+rt_55 <- persian_55_audio_started %>% group_by(trial_unique_id) %>%
+  arrange(trial_unique_id, object) %>%
+  mutate(final_rt = rt - lag(rt)) %>%
+  filter(!is.na(final_rt)) %>%
+  select(final_rt, trial_unique_id)
+```
+
+```{r}
+persian_55_final <- merge(persian_55, rt_55, by = c("trial_unique_id"))
+```
+
+Combining both 55 and 52 objects
+```{r}
+persian_55_52 <- rbind(persian_55_final, persian_52_final)
+```
+
+Filtering for correct answers in order to generate means for reaction time 
+```{r}
+persian_rt <- persian_55_52 %>% filter(accuracy == 1, set == "critical", prime_type == "target")
+
+
+```
+
+```{r}
+str(persian_rt)
+```
+
+```{r}
+summary(persian_rt$final_rt)
+```
+
+```{r}
+qqnorm(persian_rt$final_rt)
+```
+
+```{r}
+persian_rt2 <- persian_rt %>% filter(final_rt > 100 & final_rt < 5000 )
+(nrow(persian_rt) - nrow(persian_rt2)) / nrow(persian_rt)*100
+```
+Checking whether data is normaly distributed
+
+```{r}
+persian_rt2$log_rt <- log(persian_rt2$final_rt)
+```
+
+```{r}
+qqnorm(persian_rt2$log_rt)
+```
+
+
+```{r}
+hist(persian_rt2$final_rt, xlab = "Reaction Time")
+```
+
+
+Checking how the distribution looks like for the random factor of participant 
+```{r}
+
+qqmath(~log_rt|participant, data = persian_rt2)
+
+```
+
+
+```{r}
+table(persian_rt2$participant)
+```
+
+box whisker plots per condition 
+```{r}
+bwplot(final_rt ~ target_condition, data = persian_rt2 )
+```
+
+Reaction Time means per condition and standard error and standard deviation 
+```{r}
+persian_rt_means <- persian_rt2 %>% group_by(target_condition) %>% summarise(Mean = round(mean(final_rt),2), Standard_Deviation = round(sd(final_rt),2), Standard_Error = round(std.error(final_rt),3)
+)
+
+
+persian_rt_means
+```
+
+Let's look at the effect of fatigue
+```{r}
+xylowess.fnc(final_rt ~ trial | participant, data = persian_rt2, ylab = "log RT")
+```
+```{r}
+str(persian_rt2)
+```
+
+```{r}
+persian_rt2 <- persian_rt2 %>% mutate (participant = as.factor(participant),
+          trial = as.factor(trial),
+          condition = as.factor(condition),
+          item = as.factor(item),
+          block = as.factor(block),
+          freq = as.factor(freq),
+          target_condition = as.factor(target_condition),
+          language = as.factor(language)
+    )
+```
+
+
+#### Linear mixed modelling for reaction time in Persian data
+```{r}
+persian_rt2 <- persian_rt2 %>% mutate(
+  target_condition = fct_relevel(target_condition, "inflected"))
+```
+
+```{r}
+rt_model_persian <- lmer(final_rt ~ target_condition + (1  | participant) + (1  | trial), data = persian_rt2)
+tab_model(rt_model_persian)
+summary(rt_model_persian)
+```
+
+Let's extract fitted values and compare these with the actual values
+```{r}
+fitted(rt_model_persian)[1:4]
+```
+```{r}
+persian_rt2$final_rt[1:4]
+```
+### Reaction Time in Persian and Azeri data
+
+```{r}
+azeri_rt2 <- azeri_rt2 %>% select(-Item)
+```
+
+```{r}
+azeri_persian_rt <- rbind(persian_rt2, azeri_rt2)
+```
+
+```{r}
+azeri_persian_rt_means <- azeri_persian_rt %>% group_by(target_condition) %>% summarise(Mean = round(mean(final_rt),2), Standard_Deviation = round(sd(final_rt),2), Standard_Error = round(std.error(final_rt),3)
+)
+
+
+azeri_persian_rt_means
+```
+### Linear Mixed Modeling for Reaction Time in Both Azeri and Persian: Reaction Time as a function of Language
+
+```{r}
+rt_model1 <- lmer(final_rt ~ target_condition * language + (1  | participant) + (1  | trial), data = azeri_persian_rt)
+tab_model(rt_model1)
+summary(rt_model1)
+```
+
+```{r}
+rt_model2 <- lmer(final_rt ~ language + (1  | participant) + (1  | trial), data = azeri_persian_rt)
+tab_model(rt_model2)
+summary(rt_model2)
+```
+
+
+```{r}
+rt_model3 <- lmer(final_rt ~ target_condition + (1  | participant) + (1  | trial), data = azeri_persian_rt)
+tab_model(rt_model3)
+summary(rt_model3)
+```
+
+
+
+
+
+
+
+
